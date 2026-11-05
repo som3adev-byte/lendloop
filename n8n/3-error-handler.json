@@ -1,0 +1,96 @@
+{
+  "id": "lendloopErrors01",
+  "name": "LendLoop \u00b7 Error handler",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "On workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "on-workflow-error"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n// Signs exactly the string that is sent, with the secret from the environment.\nfunction sign(body) {\n  const ts = String(Date.now());\n  const sig = crypto.createHmac('sha256', $env.N8N_TO_CONVEX_SECRET).update(`${ts}.${body}`).digest('hex');\n  return { ts, sig, body };\n}\n\nconst e = $input.first().json;\nconst report = {\n  executionId: String(e.execution?.id ?? Date.now()),\n  workflow: e.workflow?.name,\n  node: e.execution?.lastNodeExecuted,\n  message: e.execution?.error?.message ?? 'Unknown error',\n};\nconsole.error('[lendloop] workflow failed', report);\nreturn [{ json: sign(JSON.stringify(report)) }];"
+      },
+      "name": "Sign error report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "sign-error-report"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CONVEX_SITE_URL }}/automation/errors",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-lendloop-timestamp",
+              "value": "={{ $json.ts }}"
+            },
+            {
+              "name": "x-lendloop-signature",
+              "value": "={{ $json.sig }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "Report to Convex",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "report-to-convex",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "On workflow error": {
+      "main": [
+        [
+          {
+            "node": "Sign error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign error report": {
+      "main": [
+        [
+          {
+            "node": "Report to Convex",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

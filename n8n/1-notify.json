@@ -1,0 +1,199 @@
+{
+  "id": "lendloopNotify01",
+  "name": "LendLoop \u00b7 Notify on request change",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lendloop-notify",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "name": "Convex webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "convex-webhook",
+      "webhookId": "6f1b8f0e-2c1a-4c55-9a51-1e0c7a7d0a01"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst item = $input.first();\nconst h = item.json.headers || {};\n// Verify the exact bytes Convex signed, not a re-serialised copy.\nconst raw = item.binary?.data\n  ? (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8')\n  : JSON.stringify(item.json.body);\nconst ts = h['x-lendloop-timestamp'] || '';\nconst sig = String(h['x-lendloop-signature'] || '');\nconst expected = crypto.createHmac('sha256', $env.CONVEX_TO_N8N_SECRET).update(`${ts}.${raw}`).digest('hex');\nconst fresh = Math.abs(Date.now() - Number(ts)) < 5 * 60 * 1000;\nconst valid = fresh && sig.length === expected.length &&\n  crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));\nif (!valid) return [{ json: { valid: false } }];\nconst p = JSON.parse(raw);\nconst seen = $getWorkflowStaticData('global').keys || [];\nreturn [{ json: { valid: true, duplicate: seen.includes(p.idempotencyKey), ...p } }];"
+      },
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "verify-signature"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Signature valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "signature-valid?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mock channel: one log line per message. Swap for Send Email / Slack / Discord in production.\nconst p = $input.first().json;\nif (p.duplicate) return [{ json: { ...p, delivered: false } }];\nconst range = `${p.startDate} to ${p.endDate}`;\nconst text = {\n  requested: `someone asked to borrow your ${p.tool} (${range}). Open LendLoop to approve or decline.`,\n  cancelled: `the request for your ${p.tool} (${range}) was cancelled.`,\n  approved: `your request for the ${p.tool} (${range}) was approved.`,\n  declined: `your request for the ${p.tool} (${range}) was declined.`,\n  returned: `thanks for returning the ${p.tool}.`,\n}[p.event];\nif (!text) throw new Error(`Unknown event: ${p.event}`);\nconst message = `Hi ${p.recipient.name}, ${text}`;\nconsole.log(`[lendloop] to=${p.recipient.email ?? 'no-email'} ${message}`);\nreturn [{ json: { ...p, delivered: true, channel: 'mock-log', message } }];"
+      },
+      "name": "Notify recipient (mock)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -100
+      ],
+      "id": "notify-recipient-(mock)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Only after delivery succeeds, so a failed run can be retried by Convex.\nconst p = $input.first().json;\nconst data = $getWorkflowStaticData('global');\nif (p.delivered) data.keys = [...(data.keys || []), p.idempotencyKey].slice(-500);\nreturn [{ json: { ok: true, duplicate: p.duplicate } }];"
+      },
+      "name": "Remember delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -100
+      ],
+      "id": "remember-delivery"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        -100
+      ],
+      "id": "respond-200"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"error\":\"bad signature\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        120
+      ],
+      "id": "respond-401"
+    }
+  ],
+  "connections": {
+    "Convex webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Signature valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature valid?": {
+      "main": [
+        [
+          {
+            "node": "Notify recipient (mock)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify recipient (mock)": {
+      "main": [
+        [
+          {
+            "node": "Remember delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remember delivery": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "lendloopErrors01"
+  },
+  "pinData": {}
+}

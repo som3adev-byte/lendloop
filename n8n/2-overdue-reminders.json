@@ -1,0 +1,249 @@
+{
+  "id": "lendloopOverdue1",
+  "name": "LendLoop \u00b7 Daily overdue reminders",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "name": "Every day 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "every-day-09:00"
+    },
+    {
+      "parameters": {},
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        180
+      ],
+      "id": "run-now"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n// Signs exactly the string that is sent, with the secret from the environment.\nfunction sign(body) {\n  const ts = String(Date.now());\n  const sig = crypto.createHmac('sha256', $env.N8N_TO_CONVEX_SECRET).update(`${ts}.${body}`).digest('hex');\n  return { ts, sig, body };\n}\n\nreturn [{ json: sign('{}') }];"
+      },
+      "name": "Sign fetch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        80
+      ],
+      "id": "sign-fetch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CONVEX_SITE_URL }}/automation/overdue",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-lendloop-timestamp",
+              "value": "={{ $json.ts }}"
+            },
+            {
+              "name": "x-lendloop-signature",
+              "value": "={{ $json.sig }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "Fetch overdue loans",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        80
+      ],
+      "id": "fetch-overdue-loans",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const { date, loans } = $input.first().json;\nif (!Array.isArray(loans)) throw new Error('Unexpected response from Convex');\nreturn loans.map((l) => ({ json: { ...l, date } }));"
+      },
+      "name": "One item per loan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        80
+      ],
+      "id": "one-item-per-loan"
+    },
+    {
+      "parameters": {
+        "jsCode": "const l = $json;\nconst days = l.daysOverdue === 1 ? '1 day' : `${l.daysOverdue} days`;\nconsole.log(`[lendloop] to=${l.borrower.email ?? 'no-email'} Hi ${l.borrower.name}, the ${l.tool} was due back ${days} ago (${l.endDate}). Please return it.`);\nreturn { json: { loanId: l.loanId, date: l.date, channel: 'mock-log' } };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Remind borrower (mock)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        80
+      ],
+      "id": "remind-borrower-(mock)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n// Signs exactly the string that is sent, with the secret from the environment.\nfunction sign(body) {\n  const ts = String(Date.now());\n  const sig = crypto.createHmac('sha256', $env.N8N_TO_CONVEX_SECRET).update(`${ts}.${body}`).digest('hex');\n  return { ts, sig, body };\n}\n\nreturn $input.all().map(({ json }) => ({\n  json: sign(JSON.stringify({ loanId: json.loanId, date: json.date, channel: json.channel })),\n}));"
+      },
+      "name": "Sign write-back",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        80
+      ],
+      "id": "sign-write-back"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CONVEX_SITE_URL }}/automation/reminders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-lendloop-timestamp",
+              "value": "={{ $json.ts }}"
+            },
+            {
+              "name": "x-lendloop-signature",
+              "value": "={{ $json.sig }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "Record reminder in Convex",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        80
+      ],
+      "id": "record-reminder-in-convex",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "Every day 09:00": {
+      "main": [
+        [
+          {
+            "node": "Sign fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run now": {
+      "main": [
+        [
+          {
+            "node": "Sign fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign fetch": {
+      "main": [
+        [
+          {
+            "node": "Fetch overdue loans",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch overdue loans": {
+      "main": [
+        [
+          {
+            "node": "One item per loan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per loan": {
+      "main": [
+        [
+          {
+            "node": "Remind borrower (mock)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remind borrower (mock)": {
+      "main": [
+        [
+          {
+            "node": "Sign write-back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign write-back": {
+      "main": [
+        [
+          {
+            "node": "Record reminder in Convex",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "lendloopErrors01"
+  },
+  "pinData": {}
+}
