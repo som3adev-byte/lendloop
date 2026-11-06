@@ -1,6 +1,6 @@
 "use client";
 import { SignInButton, UserButton } from "@clerk/nextjs";
-import { Authenticated, Unauthenticated, useQuery } from "convex/react";
+import { Authenticated, AuthLoading, Unauthenticated, useQuery } from "convex/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { api } from "../../convex/_generated/api";
@@ -35,6 +35,7 @@ export function Header() {
         <Nav />
         <UserButton />
       </Authenticated>
+      <AuthLoading><span className="button primary placeholder">Sign in</span></AuthLoading>
       <Unauthenticated>
         <SignInButton mode="modal">
           <button className="primary">Sign in</button>

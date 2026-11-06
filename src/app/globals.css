@@ -99,3 +99,19 @@ li.row { padding: 10px 14px; background: var(--panel); border: 1px solid var(--l
 
 .activity { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px dashed var(--line); font-size: 13px; color: var(--dim); }
 .activity .bad { color: var(--bad); }
+
+.hero h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.08; letter-spacing: -0.02em; margin-bottom: 12px; }
+.hero .tagline { max-width: 34em; }
+.placeholder { opacity: 0.6; pointer-events: none; }
+
+.steps { list-style: none; padding: 0; margin: 28px 0 8px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.steps li { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 4px; align-content: start; }
+.step-n { width: 24px; height: 24px; border-radius: 99px; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--accent); color: var(--accent-text); }
+@media (max-width: 640px) { .steps { grid-template-columns: 1fr; } }
+
+.grid { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.tool { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 8px; justify-items: start; min-height: 122px; }
+.tool-mark { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; color: var(--accent); background: var(--bg); border: 1px solid var(--line); }
+.skeleton { background: linear-gradient(90deg, var(--panel), var(--line), var(--panel)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
